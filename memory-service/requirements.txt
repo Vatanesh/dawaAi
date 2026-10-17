@@ -1,0 +1,4 @@
+neo4j-agent-memory==0.7.0
+fastapi
+uvicorn[standard]
+python-dotenv

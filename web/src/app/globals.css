@@ -1,0 +1,187 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Dawa tokens on top of shadcn/ui. --brand is the single white-label knob (NEXT_PUBLIC_BRAND_COLOR);
+ * severity colours are reserved for risk and never used as decoration.
+ */
+:root {
+  --brand: #0e7c66;
+  --radius: 0.75rem;
+
+  --background: #f5f7f6;
+  --foreground: #0f1f1b;
+  --card: #ffffff;
+  --card-foreground: #0f1f1b;
+  --popover: #ffffff;
+  --popover-foreground: #0f1f1b;
+  --primary: var(--brand);
+  --primary-foreground: #ffffff;
+  --secondary: #eef2f0;
+  --secondary-foreground: #0f1f1b;
+  --muted: #eef2f0;
+  --muted-foreground: #5b6b66;
+  --accent: color-mix(in oklab, var(--brand) 10%, white);
+  --accent-foreground: color-mix(in oklab, var(--brand) 80%, black);
+  --destructive: #d23b31;
+  --border: #e3e8e6;
+  --input: #dce3e0;
+  --ring: var(--brand);
+
+  --major: #d23b31;
+  --major-wash: #fdecea;
+  --moderate: #c97a0e;
+  --moderate-wash: #fdf3e1;
+  --minor: #56769a;
+  --minor-wash: #eaf0f6;
+  --clear: #12936a;
+  --clear-wash: #e3f5ec;
+
+  --sidebar: #fbfcfb;
+  --sidebar-foreground: #0f1f1b;
+  --sidebar-primary: var(--brand);
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #eef2f0;
+  --sidebar-accent-foreground: #0f1f1b;
+  --sidebar-border: #e3e8e6;
+  --sidebar-ring: var(--brand);
+  --chart-1: var(--brand);
+  --chart-2: #56769a;
+  --chart-3: #c97a0e;
+  --chart-4: #d23b31;
+  --chart-5: #12936a;
+}
+
+.dark {
+  --brand: #34c29e;
+  --background: #0a100f;
+  --foreground: #e6eeeb;
+  --card: #111917;
+  --card-foreground: #e6eeeb;
+  --popover: #121b19;
+  --popover-foreground: #e6eeeb;
+  --primary: var(--brand);
+  --primary-foreground: #04201a;
+  --secondary: #18221f;
+  --secondary-foreground: #e6eeeb;
+  --muted: #18221f;
+  --muted-foreground: #8fa19b;
+  --accent: color-mix(in oklab, var(--brand) 16%, #111917);
+  --accent-foreground: color-mix(in oklab, var(--brand) 70%, white);
+  --destructive: #f2756b;
+  --border: #1f2b28;
+  --input: #263532;
+  --ring: var(--brand);
+
+  --major: #f2756b;
+  --major-wash: #3a1916;
+  --moderate: #eba24a;
+  --moderate-wash: #35250d;
+  --minor: #9ab7d3;
+  --minor-wash: #1b2633;
+  --clear: #4fd19e;
+  --clear-wash: #122c22;
+
+  --sidebar: #0d1513;
+  --sidebar-foreground: #e6eeeb;
+  --sidebar-accent: #18221f;
+  --sidebar-accent-foreground: #e6eeeb;
+  --sidebar-border: #1f2b28;
+}
+
+@theme inline {
+  --font-sans: var(--font-atkinson), ui-sans-serif, system-ui, sans-serif;
+  --font-heading: var(--font-atkinson), ui-sans-serif, system-ui, sans-serif;
+
+  --color-major: var(--major);
+  --color-major-wash: var(--major-wash);
+  --color-moderate: var(--moderate);
+  --color-moderate-wash: var(--moderate-wash);
+  --color-minor: var(--minor);
+  --color-minor-wash: var(--minor-wash);
+  --color-clear: var(--clear);
+  --color-clear-wash: var(--clear-wash);
+
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "ss01", "tnum";
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+  html {
+    @apply font-sans;
+  }
+}
+
+/* Markdown answers from the assistant */
+.answer p { margin: 0.35em 0; }
+.answer p:first-child { margin-top: 0; }
+.answer ul { margin: 0.35em 0; padding-left: 1.05em; list-style: disc; }
+.answer li { margin: 0.2em 0; }
+.answer li::marker { color: var(--muted-foreground); }
+.answer strong { font-weight: 700; }
+
+/* Soft glow around the medicine being trialled: the one orchestrated "something changed" moment. */
+@keyframes trial-glow {
+  0%, 100% { box-shadow: 0 0 0 1px color-mix(in oklab, var(--brand) 45%, transparent), 0 0 0 0 color-mix(in oklab, var(--brand) 0%, transparent); }
+  50% { box-shadow: 0 0 0 1px color-mix(in oklab, var(--brand) 70%, transparent), 0 0 24px 2px color-mix(in oklab, var(--brand) 22%, transparent); }
+}
+.trial-glow { animation: trial-glow 3.2s ease-in-out infinite; }
+
+@media print {
+  .no-print { display: none !important; }
+  body { background: white; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}

@@ -1,0 +1,47 @@
+# Dependencies and virtual environments
+node_modules/
+.pnp
+.pnp.*
+memory-service/.venv/
+.venv/
+venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Next.js build output
+web/.next/
+web/out/
+web/build/
+*.tsbuildinfo
+next-env.d.ts
+
+# Secrets and local config (keep the example)
+.env
+.env.*
+!.env.example
+
+# Test and tooling artefacts
+coverage/
+playwright-report/
+test-results/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+
+# Deployment
+.vercel
