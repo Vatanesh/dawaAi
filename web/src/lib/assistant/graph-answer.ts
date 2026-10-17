@@ -200,6 +200,24 @@ export async function graphAnswer(
       out.push("");
       groups.push({ title: medLabel(r.medication), findings: hits });
     }
+  } else if (u.conditions.length) {
+    // "Is anything on his list a problem for his diabetes?"
+    const res = await current();
+    for (const c of u.conditions) {
+      const hits = res.report.findings.filter((f) => f.path.some((n) => n.id === `cond:${c.id}`));
+      const treats = context.regimen.filter((r) => PURPOSE_FOR_CONDITION.some(([cond, re]) => cond.test(c.name) && re.test(`${r.purpose ?? ""} ${r.medication.description ?? ""}`)));
+      verdict = hits.length ? verdictOf(hits) : "clear";
+      out.push(
+        hits.length
+          ? `**${hits.length} ${hits.length === 1 ? "medicine is" : "medicines are"} flagged for ${w.possessive} ${c.name.toLowerCase()}.**`
+          : `**Nothing on ${w.possessive} list is flagged for ${w.pronoun} ${c.name.toLowerCase()} in the graph.**`,
+        "",
+        ...hits.slice(0, 5).map(bullet),
+      );
+      if (treats.length) out.push(`- **Taken for it**: ${treats.map((r) => medLabel(r.medication)).join(", ")}.`);
+      out.push("");
+      groups.push({ title: c.name, findings: hits });
+    }
   } else if (/\b(when|what time|schedule|timing|space|apart|together)\b/i.test(question)) {
     const res = await current();
     const s = res.schedule;
@@ -222,11 +240,21 @@ export async function graphAnswer(
         ...hits.slice(0, 5).map(bullet),
       );
       groups.push({ title: `Findings that mention ${symptom.label}`, findings: hits });
-    } else {
+    } else if (u.overview) {
       const important = res.report.findings.filter((f) => f.severity !== "minor");
       verdict = res.report.verdict;
       out.push(`**${cap(w.possessive)} list: ${tally(res.report.findings)}.**`, "", ...important.slice(0, 4).map(bullet));
       groups.push({ title: "Most important now", findings: important });
+    } else {
+      // Nothing recognisable: say so instead of dumping the overview as if it answered the question.
+      verdict = "info";
+      out.push(
+        `**I didn't find a medicine, food, condition or symptom in that question, so I can't check it against ${w.possessive} graph.**`,
+        "",
+        `I can check: a medicine by name or by what it's for ("${w.pronoun} blood pressure tablets", "Aleve"), a food or drink ("wine", "grapefruit"), one of ${w.possessive} conditions, a symptom ("dizzy", "drowsy"), or dose timing.`,
+        "",
+        `For the whole picture, ask "What's the overall situation with ${w.possessive} medicines?" (right now: ${tally(res.report.findings)}).`,
+      );
     }
   }
 
@@ -240,6 +268,19 @@ export async function graphAnswer(
 
   return { verdict, markdown: out.join("\n").replace(/\n{3,}/g, "\n\n").trim(), groups: groups.filter((g) => g.findings.length), steps };
 }
+
+// Which recorded purpose a medicine serves for a given condition, for "taken for it" lines.
+const PURPOSE_FOR_CONDITION: [RegExp, RegExp][] = [
+  [/diabet/i, /blood sugar|diabet/i],
+  [/blood pressure|hypertens/i, /blood pressure/i],
+  [/thyroid/i, /thyroid/i],
+  [/reflux|gerd/i, /heartburn|reflux|acid/i],
+  [/depress/i, /mood|depress/i],
+  [/insomnia/i, /sleep/i],
+  [/osteoporosis/i, /bone/i],
+  [/fibrillation/i, /rhythm|heart/i],
+  [/arthritis/i, /pain|knee|joint/i],
+];
 
 const SEV_WEIGHT: Record<Severity, number> = { major: 100, moderate: 10, minor: 1 };
 const SEVERITY_ORDER: Record<Severity, number> = { major: 0, moderate: 1, minor: 2 };
