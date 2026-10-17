@@ -45,7 +45,7 @@ export function checkGrounded(
   }
 
   // 5. Policy: the graph can only say "no known conflict", never "safe".
-  if (/\bsafe(ly)?\b/i.test(text) && !/\bsafe(ly)?\b/i.test(opts.question)) reasons.push('says "safe"; the graph can only say "no known conflict"');
+  if (/\bsafe(ly|st|r)?\b/i.test(text) && !/\bsafe(ly|st|r)?\b/i.test(opts.question)) reasons.push('says "safe"; the graph can only say "no known conflict"');
 
   return { ok: reasons.length === 0, reasons };
 }

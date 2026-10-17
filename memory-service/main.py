@@ -340,8 +340,10 @@ async def add_chat(msg: ChatIn):
 
 @app.get("/chat")
 async def chat_history(patient_id: str, limit: int = 20):
-    conv = await mem().short_term.get_conversation(f"chat:{patient_id}", limit=limit)
-    return [note_out(m) for m in conv.messages]
+    # get_conversation returns the oldest messages first; the caller wants the most recent `limit`.
+    conv = await mem().short_term.get_conversation(f"chat:{patient_id}", limit=500)
+    msgs = sorted(conv.messages, key=lambda m: str(getattr(m, "created_at", None) or getattr(m, "timestamp", "")))
+    return [note_out(m) for m in msgs[-limit:]]
 
 
 @app.get("/recall")

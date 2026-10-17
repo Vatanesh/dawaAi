@@ -23,15 +23,19 @@ export type AskEvent =
 
 export const aiMode = aiProvider;
 
-const NARRATOR = `You are DawaAI, a medication-safety assistant for family caregivers of older adults.
-Rewrite the FACTS into a short answer to the caregiver's QUESTION.
-Rules:
-- Use only the FACTS. Never add an interaction, dose or claim that is not in them.
+const NARRATOR = `You are DawaAI, a medication-safety assistant talking with a family caregiver of an older adult. You rewrite the FACTS below into a natural, conversational reply to the caregiver's QUESTION, the way a knowledgeable, calm friend who is a pharmacist would talk.
+
+Style:
+- Plain prose in 2 to 4 short paragraphs (under 170 words). No headings, no bullet lists, no bold, unless the caregiver asks for a list.
+- Answer the question directly in the first sentence, then explain what matters most and why, then say what to do next (who to talk to, what to watch for).
+- Use the person's name the caregiver uses. Refer to earlier turns naturally if they are relevant.
+- Keep medicine names exactly as written in the FACTS. Where the FACTS mark an item "DrugBank estimate", say that its severity is estimated.
+
+Rules you must not break:
+- Use only the FACTS. Never add an interaction, dose, number, symptom or claim that is not in them.
 - If the FACTS say there is no known conflict, say "no known conflict in our graph", never "safe".
-- Start with one bold sentence that answers the question directly. Then at most 4 short bullets.
-- Under 110 words. Plain, calm language. Keep medicine names exactly as given.
-- Never tell them to stop a prescribed medicine on their own; say who to ask (prescriber or pharmacist).
-- Where the FACTS mark an item "DrugBank estimate", keep those words next to it: the severity there is estimated, not graded.`;
+- Never tell them to stop or change a prescribed medicine on their own; point them to the prescriber or pharmacist.
+- If the FACTS say the question could not be matched to a medicine, food, condition or symptom, say so kindly and suggest how to ask.`;
 
 export async function ask(
   patientId: string,
@@ -100,6 +104,18 @@ export async function ask(
           arguments: { names: extra.map((m) => m.name) },
         },
       );
+
+    // A follow-up ("what about at night?") usually refers to the previous question: reuse its subject.
+    const lastUser = [...history].reverse().find((m) => m.role === "user" && m.text.trim() !== question.trim())?.text;
+    const unmatched = (x: typeof u) => !x.candidates.length && !x.classAsked && !x.focusRegimen.length && !x.foods.length && !x.conditions.length && !x.overview;
+    const pronounOnly = /\b(it|that|this|them|those)\b/i.test(question) && !u.candidates.length && !u.classAsked && !u.focusRegimen.length;
+    if ((unmatched(u) || pronounOnly) && lastUser) {
+      const combined = understand(`${lastUser} ${question}`, context, [...catalog, ...extra, ...(await resolveDrugNames(lastUser, catalog, repo))], foods);
+      if (!unmatched(combined) && (combined.candidates.length || combined.classAsked || combined.focusRegimen.length || unmatched(u))) {
+        u = combined;
+        step("Took the subject from the previous question", lastUser.slice(0, 80));
+      }
+    }
 
     // Nothing recognised? Let the model read the question (brand names, misspellings, other languages).
     const nothing =
@@ -241,10 +257,16 @@ async function narrate(args: {
     emit({ type: "mode", narrated: false, checked: true, rejected });
     return facts;
   };
+  const draft = async (extra: ChatMessage[]) => {
+    let text = "";
+    let finish: string | null = null;
+    for await (const delta of routerStream([...messages, ...extra], { maxTokens: 2000, signal, onFinish: (r) => (finish = r) })) text += delta;
+    return { text, finish };
+  };
   let text = "";
   let finish: string | null = null;
   try {
-    for await (const delta of routerStream(messages, { maxTokens: 2000, signal, onFinish: (r) => (finish = r) })) text += delta;
+    ({ text, finish } = await draft([]));
   } catch (err) {
     return fallback(err instanceof Error ? err.message : String(err));
   }
@@ -252,8 +274,24 @@ async function narrate(args: {
   if (finish === "length") return fallback("answer was cut off");
 
   // Vocabulary = everything the graph knows by name, plus any DrugBank name the model used.
-  const extraNames = await args.repo.findDrugNames(text).catch(() => [] as string[]);
-  const check = checkGrounded(text, facts, { question, vocabulary: [...args.vocabulary, ...extraNames] });
+  const vocabulary = async (t: string) => [...args.vocabulary, ...(await args.repo.findDrugNames(t).catch(() => [] as string[]))];
+  let check = checkGrounded(text, facts, { question, vocabulary: await vocabulary(text) });
+  if (!check.ok) {
+    // One more try, telling the model exactly what it got wrong; then the graph answer is shown as is.
+    step("Asked the AI to rewrite", check.reasons.join("; "), { name: "grounding.check", arguments: { rejected: check.reasons } });
+    try {
+      const again = await draft([
+        { role: "assistant", content: text },
+        { role: "user", content: `That draft was rejected by the graph check because it ${check.reasons.join("; and it ")}. Rewrite the whole reply using only the FACTS, keeping the conversational style.` },
+      ]);
+      if (again.text.trim().length >= 20 && again.finish !== "length") {
+        text = again.text;
+        check = checkGrounded(text, facts, { question, vocabulary: await vocabulary(text) });
+      }
+    } catch {
+      // Keep the first check's verdict.
+    }
+  }
   if (!check.ok) {
     step("Rejected the AI wording", check.reasons.join("; "), { name: "grounding.check", arguments: { rejected: check.reasons } });
     return fallback("grounding check failed", check.reasons);

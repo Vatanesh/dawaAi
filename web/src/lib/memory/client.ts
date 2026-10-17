@@ -93,7 +93,10 @@ class HttpMemoryStore implements MemoryStore {
     const rows = await this.call<{ role: string; text: string; createdAt: string }[]>(
       `/chat?patient_id=${encodeURIComponent(patientId)}&limit=${limit}`,
     );
-    return rows.map((r) => ({ role: r.role === "assistant" ? "assistant" : "user", text: r.text, createdAt: r.createdAt }) as ChatMessage);
+    return rows
+      .map((r) => ({ role: r.role === "assistant" ? "assistant" : "user", text: r.text, createdAt: r.createdAt }) as ChatMessage)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+      .slice(-limit);
   }
   async addTrace(trace: TraceInput) {
     await this.call("/traces", {
