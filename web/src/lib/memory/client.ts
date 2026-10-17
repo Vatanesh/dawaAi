@@ -1,3 +1,5 @@
+import { getRepository } from "../graph/repository";
+
 // Memory for the caregiver assistant, backed by the neo4j-agent-memory sidecar (memory-service/).
 // When MEMORY_SERVICE_URL isn't set, an in-process store with the same shape keeps the demo working.
 
@@ -47,7 +49,7 @@ export interface TraceInput {
 }
 
 export interface MemoryStore {
-  readonly mode: "neo4j-agent-memory" | "local";
+  readonly mode: "neo4j-agent-memory" | "neo4j-read" | "local";
   listNotes(patientId: string): Promise<CareNote[]>;
   addNote(patientId: string, note: Pick<CareNote, "text" | "kind"> & { author?: string }): Promise<CareNote>;
   recall(patientId: string, query: string, limit?: number): Promise<CareNote[]>;
@@ -114,28 +116,23 @@ class HttpMemoryStore implements MemoryStore {
 }
 
 const now = () => new Date().toISOString();
-const daysAgo = (d: number) => new Date(Date.now() - d * 86_400_000).toISOString();
 
+/** Keyword recall shared by the stores that have no vector index. */
+function keywordRecall(notes: CareNote[], query: string, limit: number) {
+  const words = new Set(query.toLowerCase().match(/[a-z]{4,}/g) ?? []);
+  const score = (n: CareNote) => (n.text.toLowerCase().match(/[a-z]{4,}/g) ?? []).filter((w) => words.has(w)).length;
+  return notes.map((n) => ({ n, s: score(n) })).sort((a, b) => b.s - a.s).slice(0, limit).map((x) => x.n);
+}
+
+/**
+ * In-process memory: starts empty (no made-up notes) and lasts for the server process. Used when
+ * neither the sidecar nor Neo4j is configured.
+ */
 class LocalMemoryStore implements MemoryStore {
-  readonly mode = "local" as const;
-  private notes = new Map<string, CareNote[]>([
-    [
-      "ramesh",
-      [
-        { id: "n1", text: "Knee pain is back. He's taking Advil most afternoons now.", kind: "observation", createdAt: daysAgo(9), mentions: [{ name: "Ibuprofen", type: "MentionedDrug", ref: "advil" }] },
-        { id: "n2", text: "Dad had a fall in the bathroom in May. No injury, but he was dizzy beforehand.", kind: "event", createdAt: daysAgo(4), mentions: [{ name: "fall", type: "CareEvent" }, { name: "dizzy", type: "Symptom" }] },
-        { id: "n3", text: "He won't give up his morning grapefruit juice. Prefers we find workarounds.", kind: "preference", createdAt: daysAgo(2), mentions: [{ name: "Grapefruit juice", type: "MentionedFood", ref: "grapefruit" }] },
-      ],
-    ],
-    [
-      "margaret",
-      [
-        { id: "n4", text: "Mum seems drowsy and a bit confused most mornings.", kind: "observation", createdAt: daysAgo(3), mentions: [{ name: "drowsy", type: "Symptom" }, { name: "confused", type: "Symptom" }] },
-      ],
-    ],
-  ]);
-  private chats = new Map<string, ChatMessage[]>();
-  private traces = new Map<string, Trace[]>();
+  readonly mode: MemoryStore["mode"] = "local";
+  protected notes = new Map<string, CareNote[]>();
+  protected chats = new Map<string, ChatMessage[]>();
+  protected traces = new Map<string, Trace[]>();
 
   async listNotes(patientId: string) {
     return [...(this.notes.get(patientId) ?? [])].reverse();
@@ -146,10 +143,7 @@ class LocalMemoryStore implements MemoryStore {
     return created;
   }
   async recall(patientId: string, query: string, limit = 5) {
-    const words = new Set(query.toLowerCase().match(/[a-z]{4,}/g) ?? []);
-    const notes = await this.listNotes(patientId);
-    const score = (n: CareNote) => (n.text.toLowerCase().match(/[a-z]{4,}/g) ?? []).filter((w) => words.has(w)).length;
-    return notes.map((n) => ({ n, s: score(n) })).sort((a, b) => b.s - a.s).slice(0, limit).map((x) => x.n);
+    return keywordRecall(await this.listNotes(patientId), query, limit);
   }
   async addChat(patientId: string, role: ChatMessage["role"], text: string) {
     this.chats.set(patientId, [...(this.chats.get(patientId) ?? []), { role, text, createdAt: now() }]);
@@ -178,12 +172,51 @@ class LocalMemoryStore implements MemoryStore {
   }
 }
 
+/**
+ * Sidecar not reachable but Neo4j is: read the notes, chats and audit trail the sidecar stored
+ * there, and keep anything written in this process locally on top. Nothing is written to the
+ * sidecar's nodes from here.
+ */
+class Neo4jReadMemoryStore extends LocalMemoryStore {
+  readonly mode = "neo4j-read" as const;
+  private reads = async () => (await getRepository()).memoryReads!;
+
+  async listNotes(patientId: string) {
+    const stored = (await (await this.reads()).notes(patientId)).map((n) => ({ ...n, kind: n.kind as CareNote["kind"] }));
+    return [...(await super.listNotes(patientId)), ...stored];
+  }
+  async chatHistory(patientId: string, limit = 20) {
+    const stored = (await (await this.reads()).chat(patientId, limit)).map((m) => ({ role: m.role === "assistant" ? "assistant" : "user", text: m.text, createdAt: m.createdAt }) as ChatMessage);
+    return [...stored, ...(await super.chatHistory(patientId, limit))].slice(-limit);
+  }
+  async listTraces(patientId: string) {
+    const stored: Trace[] = (await (await this.reads()).traces(patientId, 30)).map((t) => ({
+      ...t,
+      steps: t.steps.map((s) => ({
+        ...s,
+        tools: s.tools.map((x) => {
+          let args: Record<string, unknown> = {};
+          try {
+            args = JSON.parse(x.arguments);
+          } catch {
+            args = { raw: x.arguments };
+          }
+          return { name: x.name, arguments: args };
+        }),
+      })),
+    }));
+    return [...(await super.listTraces(patientId)), ...stored];
+  }
+}
+
 const globalForMemory = globalThis as unknown as { __dawaMemory?: MemoryStore };
 
 export function getMemory(): MemoryStore {
   globalForMemory.__dawaMemory ??= process.env.MEMORY_SERVICE_URL
     ? new HttpMemoryStore(process.env.MEMORY_SERVICE_URL.replace(/\/$/, ""))
-    : new LocalMemoryStore();
+    : process.env.NEO4J_URI
+      ? new Neo4jReadMemoryStore()
+      : new LocalMemoryStore();
   return globalForMemory.__dawaMemory;
 }
 

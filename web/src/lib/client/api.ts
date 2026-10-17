@@ -12,7 +12,7 @@ export const fetcher = async <T,>(url: string): Promise<T> => {
 
 export interface Status {
   graph: "neo4j" | "demo";
-  memory: "neo4j-agent-memory" | "local";
+  memory: "neo4j-agent-memory" | "neo4j-read" | "local";
   ai: "graph" | "claude" | "router";
   model: string | null;
   aiIssue?: string | null;

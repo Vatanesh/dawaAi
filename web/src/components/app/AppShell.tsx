@@ -219,8 +219,12 @@ function SystemStatus() {
         },
         {
           label:
-            s.memory === "neo4j-agent-memory" ? "Agent memory" : "Local memory",
-          ok: s.memory === "neo4j-agent-memory",
+            s.memory === "neo4j-agent-memory"
+              ? "Agent memory"
+              : s.memory === "neo4j-read"
+                ? "Agent memory (read-only)"
+                : "Local memory",
+          ok: s.memory !== "local",
         },
         {
           label: s.aiIssue

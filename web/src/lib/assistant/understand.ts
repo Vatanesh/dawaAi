@@ -91,9 +91,11 @@ export function understand(
 
   // Specific medicines by brand, product or ingredient name. Longest names first so
   // "Tylenol PM" wins over "Tylenol".
+  // Names in brackets are aliases too: "Acetaminophen (paracetamol)" answers to both.
+  const aliases = (name: string) => [name.replace(/\s*\(.*\)/, ""), ...(name.match(/\(([^)]+)\)/)?.[1].split(/[,/]/) ?? [])].map((x) => x.trim());
   const names = catalog
-    .flatMap((m) => [m.name, m.brand, ...(m.ingredients.length === 1 ? m.ingredients.map((i) => i.name.replace(/\s*\(.*\)/, "")) : [])]
-      .filter((n): n is string => !!n && n.length > 3)
+    .flatMap((m) => [...aliases(m.name), ...(m.brand ? aliases(m.brand) : []), ...(m.ingredients.length === 1 ? m.ingredients.flatMap((i) => aliases(i.name)) : [])]
+      .filter((n) => n.length > 3)
       .map((n) => ({ n: n.toLowerCase(), m })))
     .sort((a, b) => b.n.length - a.n.length);
   let masked = q;

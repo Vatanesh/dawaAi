@@ -11,7 +11,7 @@ import type {
   PatientSummary,
 } from "../types";
 import { mergeDrugBank, type DrugBankRows } from "./drugbank";
-import { DRUGBANK_PREFIX, newPatientId, slugify, type GraphRepository, type GraphStats, type RegimenInput } from "./repository";
+import { DRUGBANK_PREFIX, newPatientId, slugify, type GraphRepository, type GraphStats, type MemoryReads, type RegimenInput } from "./repository";
 
 const ING = "{.id, .name, .drugClass, .atc}";
 const MED_PROJECTION = `m{.id, .name, .brand, .kind, .description, .source,
@@ -76,6 +76,54 @@ export class Neo4jRepository implements GraphRepository {
     );
     return { ...row, source: "neo4j" };
   }
+
+  // The neo4j-agent-memory sidecar owns these nodes; this only reads them, for deployments where the
+  // sidecar is not reachable (e.g. the web app on Vercel with the sidecar on a laptop).
+  memoryReads: MemoryReads = {
+    notes: async (patientId) => {
+      const rows = await this.read<{ id: string; text: string; role: string; metadata: string | null; createdAt: string; mentions: { name: string; type: string; ref: string | null }[] }>(
+        `MATCH (c:Conversation {session_id: $session})-[:HAS_MESSAGE]->(m:Message)
+         OPTIONAL MATCH (m)-[:MENTIONS]->(e:Entity) WHERE e.type <> 'CareRecipient'
+         OPTIONAL MATCH (e)-[:REFERS_TO]->(n)
+         WITH m, collect(DISTINCT CASE WHEN e IS NULL THEN null ELSE {name: e.name, type: e.type, ref: n.id} END) AS mentions
+         RETURN m.id AS id, m.content AS text, m.role AS role, m.metadata AS metadata, toString(m.timestamp) AS createdAt,
+                [x IN mentions WHERE x IS NOT NULL] AS mentions
+         ORDER BY m.timestamp DESC LIMIT 50`,
+        { session: `care:${patientId}` },
+      );
+      return rows.map((r) => {
+        let meta: { kind?: string; author?: string | null } = {};
+        try {
+          meta = r.metadata ? JSON.parse(r.metadata) : {};
+        } catch {
+          // Unreadable metadata: treat as a plain observation.
+        }
+        return { id: r.id, text: r.text, role: r.role, kind: meta.kind ?? "observation", author: meta.author ?? null, createdAt: r.createdAt, mentions: r.mentions };
+      });
+    },
+    chat: (patientId, limit) =>
+      this.read<{ role: string; text: string; createdAt: string }>(
+        `MATCH (c:Conversation {session_id: $session})-[:HAS_MESSAGE]->(m:Message)
+         WITH m ORDER BY m.timestamp DESC LIMIT $limit
+         RETURN m.role AS role, m.content AS text, toString(m.timestamp) AS createdAt ORDER BY m.timestamp ASC`,
+        { session: `chat:${patientId}`, limit: neo4j.int(limit) },
+      ),
+    traces: async (patientId, limit) => {
+      const rows = await this.read<{ id: string; task: string; outcome: string | null; success: boolean | null; startedAt: string; steps: { thought: string | null; action: string | null; observation: string | null; step: number; tools: { name: string; arguments: string }[] }[] }>(
+        `MATCH (t:ReasoningTrace {session_id: $session})
+         WITH t ORDER BY t.started_at DESC LIMIT $limit
+         OPTIONAL MATCH (t)-[:HAS_STEP]->(s:ReasoningStep)
+         OPTIONAL MATCH (s)-[:USES_TOOL]->(x:ToolCall)
+         WITH t, s, collect(CASE WHEN x IS NULL THEN null ELSE {name: x.tool_name, arguments: x.arguments} END) AS tools
+         WITH t, collect(CASE WHEN s IS NULL THEN null ELSE {thought: s.thought, action: s.action, observation: s.observation, step: s.step_number, tools: [y IN tools WHERE y IS NOT NULL]} END) AS steps
+         RETURN t.id AS id, t.task AS task, t.outcome AS outcome, t.success AS success, toString(t.started_at) AS startedAt,
+                [z IN steps WHERE z IS NOT NULL] AS steps
+         ORDER BY t.started_at DESC`,
+        { session: `checks:${patientId}`, limit: neo4j.int(limit) },
+      );
+      return rows.map((r) => ({ ...r, steps: [...r.steps].sort((a, b) => a.step - b.step).map(({ step: _s, ...rest }) => rest) }));
+    },
+  };
 
   async warm() {
     await this.driver.verifyConnectivity({ database: this.database });

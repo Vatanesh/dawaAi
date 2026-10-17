@@ -37,7 +37,14 @@ export function checkGrounded(
     if (wordRe(word).test(lower) && !wordRe(word).test(allowed)) reasons.push(`calls something "${word}" without a ${word} finding`);
   }
 
-  // 4. Policy: the graph can only say "no known conflict", never "safe".
+  // 4. Estimated severities must stay labelled: a finding the facts list as a DrugBank estimate
+  //    may be left out, but if its name is used, the label must come with it.
+  for (const m of facts.matchAll(/^- \*\*(.+?)\*\* \([^)]*DrugBank estimate/gim)) {
+    const title = m[1];
+    if (lower.includes(title.toLowerCase()) && !/drugbank/i.test(text)) reasons.push(`uses "${title}" without its "DrugBank estimate" label`);
+  }
+
+  // 5. Policy: the graph can only say "no known conflict", never "safe".
   if (/\bsafe(ly)?\b/i.test(text) && !/\bsafe(ly)?\b/i.test(opts.question)) reasons.push('says "safe"; the graph can only say "no known conflict"');
 
   return { ok: reasons.length === 0, reasons };

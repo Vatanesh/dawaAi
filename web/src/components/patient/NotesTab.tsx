@@ -86,7 +86,11 @@ export function NotesTab({ patientId, name }: { patientId: string; name: string 
         />
         <div className="flex items-center justify-between gap-2">
           <span className="text-[11px] text-muted-foreground">
-            {status?.memory === "neo4j-agent-memory" ? "Stored in Neo4j Agent Memory" : "Stored for this session"}
+            {status?.memory === "neo4j-agent-memory"
+              ? "Stored in Neo4j Agent Memory"
+              : status?.memory === "neo4j-read"
+                ? "Notes below come from Neo4j Agent Memory; new ones are kept for this session only (memory service not connected)"
+                : "Stored for this session"}
           </span>
           <Button size="sm" disabled={busy || text.trim().length < 2} onClick={() => void save()}>
             {busy && <Loader2 className="animate-spin" />} Save note

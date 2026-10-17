@@ -19,7 +19,11 @@ export function ActivityTab({ patientId }: { patientId: string }) {
     <div className="space-y-2">
       <p className="text-xs text-muted-foreground">
         Every check and answer with the steps behind it
-        {status?.memory === "neo4j-agent-memory" ? ", stored as reasoning traces in Neo4j Agent Memory for audit." : "."}
+        {status?.memory === "neo4j-agent-memory"
+          ? ", stored as reasoning traces in Neo4j Agent Memory for audit."
+          : status?.memory === "neo4j-read"
+            ? ", read from Neo4j Agent Memory (new checks are kept for this session only)."
+            : "."}
       </p>
       {traces?.length === 0 && (
         <EmptyState icon={<History className="size-6" />} title="No activity yet">

@@ -39,6 +39,14 @@ export interface GraphRepository {
   warm?(): Promise<void>;
   /** Live counts for the About page: every number is a database count. */
   stats(): Promise<GraphStats>;
+  /** Read what the memory sidecar stored (notes, chats, audit traces) when the sidecar itself isn't reachable. */
+  memoryReads?: MemoryReads;
+}
+
+export interface MemoryReads {
+  notes(patientId: string): Promise<{ id: string; text: string; role: string; kind: string; author: string | null; createdAt: string; mentions: { name: string; type: string; ref: string | null }[] }[]>;
+  chat(patientId: string, limit: number): Promise<{ role: string; text: string; createdAt: string }[]>;
+  traces(patientId: string, limit: number): Promise<{ id: string; task: string; outcome: string | null; success: boolean | null; startedAt: string; steps: { thought: string | null; action: string | null; observation: string | null; tools: { name: string; arguments: string }[] }[] }[]>;
 }
 
 export interface GraphStats {

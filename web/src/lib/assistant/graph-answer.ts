@@ -193,8 +193,18 @@ export async function graphAnswer(
       const advice = res.report.labelAdvice.filter((a) => a.medicationId === r.medication.id).map((a) => a.text);
       const avoid = res.report.watchFoods.filter((e) => r.medication.ingredients.some((i) => i.id === e.ingredient.id)).map((e) => e.food.name.toLowerCase());
       verdict = verdictOf(hits);
-      out.push(`**${medLabel(r.medication)}** (${r.dose}, ${r.slots.join(" and ") || "no set time"}): ${tally(hits)}.`, "");
-      out.push(...hits.filter((f) => f.severity !== "minor").slice(0, 4).map(bullet));
+      const important = hits.filter((f) => f.severity !== "minor");
+      const when = r.slots.join(" and ") || "no set time";
+      out.push(
+        important.length
+          ? `**${medLabel(r.medication)}** (${r.dose}, ${when}): ${tally(hits)}.`
+          : hits.length
+            ? `**${medLabel(r.medication)}** (${r.dose}, ${when}): nothing serious or moderate in ${w.possessive} graph; ${hits.length} minor ${hits.length === 1 ? "thing" : "things"} to know.`
+            : `**${medLabel(r.medication)}** (${r.dose}, ${when}): no known conflicts in ${w.possessive} graph.`,
+        "",
+      );
+      // When nothing serious exists, the minor items are the answer, so show them.
+      out.push(...(important.length ? important : hits).slice(0, 4).map(bullet));
       if (avoid.length) out.push(`- **Also avoid**: ${[...new Set(avoid)].join(", ")}.`);
       if (advice.length) out.push(`- **How to take**: ${advice.join(" ")}`);
       out.push("");
@@ -258,8 +268,15 @@ export async function graphAnswer(
     }
   }
 
-  const relevantNotes = notes.filter((n) => n.mentions.some((m) => m.type === "Symptom" || m.type === "CareEvent") || /fall|dizz|bruis|bleed|confus|drows/i.test(n.text));
-  if (relevantNotes.length && (options.length || u.focusRegimen.length)) {
+  // A care note is brought up only when it is about a medicine in play, or when a new medicine is
+  // being considered and the note records an event or symptom worth telling the prescriber.
+  const inPlay = new Set([...u.focusRegimen.map((r) => r.medication.id), ...u.focusRegimen.flatMap((r) => r.medication.ingredients.map((i) => i.id))]);
+  const relevantNotes = notes.filter(
+    (n) =>
+      n.mentions.some((m) => m.ref && inPlay.has(m.ref)) ||
+      (options.length > 0 && (n.mentions.some((m) => m.type === "Symptom" || m.type === "CareEvent") || /fall|dizz|bruis|bleed|confus|drows/i.test(n.text))),
+  );
+  if (relevantNotes.length) {
     const n = relevantNotes[0];
     const bleeding = options.some((m) => m.ingredients.some((i) => i.atc?.startsWith("B01")));
     out.push("", `**From care notes:** "${n.text}"${bleeding && /fall|dizz/i.test(n.text) ? " Mention this fall to the prescriber before a blood thinner is started." : ""}`);

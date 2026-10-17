@@ -30,7 +30,8 @@ Rules:
 - If the FACTS say there is no known conflict, say "no known conflict in our graph", never "safe".
 - Start with one bold sentence that answers the question directly. Then at most 4 short bullets.
 - Under 110 words. Plain, calm language. Keep medicine names exactly as given.
-- Never tell them to stop a prescribed medicine on their own; say who to ask (prescriber or pharmacist).`;
+- Never tell them to stop a prescribed medicine on their own; say who to ask (prescriber or pharmacist).
+- Where the FACTS mark an item "DrugBank estimate", keep those words next to it: the severity there is estimated, not graded.`;
 
 export async function ask(
   patientId: string,
@@ -241,12 +242,14 @@ async function narrate(args: {
     return facts;
   };
   let text = "";
+  let finish: string | null = null;
   try {
-    for await (const delta of routerStream(messages, { maxTokens: 450, signal })) text += delta;
+    for await (const delta of routerStream(messages, { maxTokens: 2000, signal, onFinish: (r) => (finish = r) })) text += delta;
   } catch (err) {
     return fallback(err instanceof Error ? err.message : String(err));
   }
   if (text.trim().length < 20) return fallback("empty answer");
+  if (finish === "length") return fallback("answer was cut off");
 
   // Vocabulary = everything the graph knows by name, plus any DrugBank name the model used.
   const extraNames = await args.repo.findDrugNames(text).catch(() => [] as string[]);
