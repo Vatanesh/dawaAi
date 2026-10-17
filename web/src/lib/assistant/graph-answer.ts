@@ -95,7 +95,11 @@ export async function graphAnswer(
 
   if (options.length) {
     // A new medicine (or a vague class of them): what would each option add?
-    const results: { med: Medication; mine: Finding[] }[] = [];
+    type Watch = SafetyResponse["report"]["watchFoods"][number];
+    // `watch` = food edges for the option that the person does not consume yet (asked-about foods).
+    const results: { med: Medication; mine: Finding[]; watch: Watch[] }[] = [];
+    const watchFor = (res: SafetyResponse, meds: Medication[]) =>
+      res.report.watchFoods.filter((e) => meds.some((m) => m.ingredients.some((i) => i.id === e.ingredient.id)));
     // Several named medicines are usually being started together ("put on furosemide and digoxin"),
     // so check them as one set, including against each other, unless the wording compares them.
     const together = !u.classAsked && options.length > 1 && !/\b(or|instead|which|better|either|versus|vs)\b/i.test(question);
@@ -103,7 +107,7 @@ export async function graphAnswer(
       const res: SafetyResponse = (await checkSafety(patientId, options.map((m) => ({ medicationId: m.id }))))!;
       const mine = res.report.findings.filter((f) => f.involvesCandidate);
       const combo: Medication = { ...options[0], id: "together", brand: undefined, name: options.map((m) => m.name).join(" + ") };
-      results.push({ med: combo, mine });
+      results.push({ med: combo, mine, watch: watchFor(res, options) });
       addStep({ action: `Checked ${combo.name} together against ${w.possessive} graph`, observation: tally(mine), tool: { name: "safety.check", arguments: { patientId, candidates: options.map((m) => m.id) } } });
     }
     // Alternatives are independent checks, so run them in parallel.
@@ -111,7 +115,7 @@ export async function graphAnswer(
       (together ? [] : options).map(async (med) => {
         const res: SafetyResponse = (await checkSafety(patientId, { medicationId: med.id }))!;
         const mine = res.report.findings.filter((f) => f.involvesCandidate);
-        results.push({ med: res.report.candidate ?? med, mine });
+        results.push({ med: res.report.candidate ?? med, mine, watch: watchFor(res, [med]) });
         addStep({ action: `Checked ${medLabel(med)} against ${w.possessive} graph`, observation: tally(mine), tool: { name: "safety.check", arguments: { patientId, candidate: med.id } } });
       }),
     );
@@ -124,15 +128,37 @@ export async function graphAnswer(
     ];
     const targetLines: string[] = [];
     for (const t of targets) {
-      const per = results.map((r) => ({ r, hit: touching(r.mine, t)[0] }));
+      const per = results.map((r) => {
+        const f = touching(r.mine, t)[0];
+        const e = "foodId" in t ? r.watch.find((x) => x.food.id === t.foodId) : undefined;
+        const hit = f
+          ? { severity: f.severity, source: f.source, detail: f.detail }
+          : e
+            ? { severity: e.severity, source: e.source, detail: `${e.effect} ${e.recommendation}` }
+            : undefined;
+        return { r, hit };
+      });
       const hits = per.filter((x) => x.hit);
+      // Name both sides of the pair so the wording cannot be read as "X conflicts with nothing".
+      const pair = results.length > 1 ? `${cap(t.label)} + any of them` : `${cap(t.label)} + ${results[0].med.name}`;
       if (!hits.length) {
-        targetLines.push(`- **${cap(t.label)}**: no known conflict in our graph${results.length > 1 ? " with any of them" : ""}.`);
+        targetLines.push(`- **${pair}**: no known conflict in our graph.`);
         continue;
       }
       const parts = hits.map(({ r, hit }) => `${r.med.name} ${WORD[hit!.severity]}${hit!.source === "drugbank" ? " (DrugBank estimate)" : ""} (${short(hit!.detail).toLowerCase()})`);
       const clear = per.filter((x) => !x.hit).map((x) => x.r.med.name);
       targetLines.push(`- **${cap(t.label)}**: ${parts.join("; ")}${clear.length ? `. No known conflict in our graph with ${clear.join(" or ")}` : ""}.`);
+    }
+    // A food the caregiver asked about may already clash with medicines on the list.
+    if (u.foods.length) {
+      const cur = await current();
+      for (const f of u.foods) {
+        const on = [
+          ...touching(cur.report.findings, { foodId: f.id }).map((h) => `${h.title.replace(` + ${f.name.toLowerCase()}`, "")} (${WORD[h.severity]})`),
+          ...cur.report.watchFoods.filter((e) => e.food.id === f.id && context.regimen.some((r) => r.medication.ingredients.some((i) => i.id === e.ingredient.id))).map((e) => `${e.ingredient.name} (${WORD[e.severity]})`),
+        ];
+        if (on.length) targetLines.push(`- **${f.name} with what ${w.pronoun} already takes**: ${[...new Set(on)].join(", ")}.`);
+      }
     }
 
     if (results.length > 1) {
